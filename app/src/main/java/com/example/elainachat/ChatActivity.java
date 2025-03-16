@@ -1,8 +1,6 @@
 package com.example.elainachat;
 
 import android.os.Bundle;
-import android.os.Handler;
-import android.os.Looper;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.Toast;
@@ -12,17 +10,25 @@ import androidx.appcompat.widget.Toolbar;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
-import java.util.ArrayList;
+
 import java.util.List;
 import android.view.Menu;
 import android.view.MenuItem;
+
+import com.example.elainachat.netty.NettyClient;
+import com.example.elainachat.netty.entity.Content;
+import com.example.elainachat.netty.entity.ContentType;
+import com.example.elainachat.netty.entity.Messages;
+import com.example.elainachat.netty.entity.Users;
+
 
 public class ChatActivity extends AppCompatActivity {
     private RecyclerView chatRecyclerView;
     private EditText messageEditText;
     private ImageButton sendButton;
+    private NettyClient client;
+    private List<Messages> messages;
     private MessageAdapter messageAdapter;
-    private List<Message> messageList;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -34,38 +40,14 @@ public class ChatActivity extends AppCompatActivity {
         messageEditText = findViewById(R.id.messageEditText);
         sendButton = findViewById(R.id.sendButton);
 
+        client = ElainaChatApplication.getInstance().getClient();
+        messages = ElainaChatApplication.getInstance().getMessages();
+        initMessageAdapter();
+        messageAdapter.clear();
+
         // 设置RecyclerView
         chatRecyclerView.setLayoutManager(new LinearLayoutManager(this));
-        messageList = new ArrayList<>();
-        messageAdapter = new MessageAdapter(messageList);
-        messageAdapter.setOnLoadMoreListener(
-                new MessageAdapter.OnLoadMoreListener() {
-                    @Override
-                    public void onLoadMore() {
-                        try {
-                            List<Message> newmessages = new ArrayList<>();
-                            // 模拟加载更多消息
-                            for (int i = 0; i < 20; i++) {
-                                newmessages.add(new Message("这是新的第 " + i + " 条消息", "bot"));
-                            }
-                            // 使用Handler.post延迟到主线程的下一个消息循环
-                            new Handler(Looper.getMainLooper()).post(() -> {
-                                messageAdapter.addMessagesAtStart(newmessages);
-                        });
-                        }
-                        catch (Exception e) {
-                            e.printStackTrace();
-                            //打印错误信息
-                            Toast.makeText(ChatActivity.this, e.getMessage(), Toast.LENGTH_LONG).show();
-                            System.out.println(e.getMessage());
-                        }
-                    }
-                }
-        );
-        chatRecyclerView.setAdapter(messageAdapter);
-
-        // 添加欢迎消息
-        addMessage("你好！我是助手，有什么可以帮你的吗？","bot");
+        chatRecyclerView.setAdapter(ElainaChatApplication.getInstance().getMessageAdapter());
 
         // 设置发送按钮点击事件
         sendButton.setOnClickListener(v -> sendMessage());
@@ -76,6 +58,18 @@ public class ChatActivity extends AppCompatActivity {
         getSupportActionBar().setDisplayShowHomeEnabled(true);
         getSupportActionBar().setTitle("聊天界面");
         toolbar.setNavigationOnClickListener(v -> finish());
+
+        new Thread(() ->{
+        // 模拟加载历史消息
+        try {
+            Users currentUser = ElainaChatApplication.getInstance().getCurrentUser();
+            Content content = new Content(ContentType.CHATHISTORY,new Messages(currentUser.getId(),1L,"100_1"));
+            client.sendMessage(content);
+        } catch (Exception e) {
+            //打印错误信息
+            System.out.println(e.getMessage());
+        }
+    }).start();
     }
 
     // 创建菜单
@@ -107,29 +101,48 @@ public class ChatActivity extends AppCompatActivity {
     }
 
     private void sendMessage() {
-        String messageText = messageEditText.getText().toString().trim();
-        if (!messageText.isEmpty()) {
-            // 添加用户消息
-            addMessage(messageText,"User");
-            // 清空输入框
+        try {
+            String messageContent = messageEditText.getText().toString();
+            if (messageContent.isEmpty()) {
+                return;
+            }
+            System.out.println(messageContent);
+            Messages messages = new Messages(ElainaChatApplication.getInstance().getCurrentUser().getId(), 2L, messageContent);
+            ElainaChatApplication.getInstance().getMessageAdapter().addMessage(messages);
             messageEditText.setText("");
-            // 模拟机器人回复
-            replayMessage(messageText);
+            client = ElainaChatApplication.getInstance().getClient();
+            client.sendMessage(new Content(ContentType.MESSAGE, messages));
+        }
+        catch (Exception e) {
+            e.printStackTrace();
+            //打印错误信息
+            System.out.println(e.getMessage());
         }
     }
 
-    private void addMessage(String message,String sender) {
-        messageAdapter.addMessage(new Message(message,sender));
-        scrollToBottom();
+    private void initMessageAdapter() {
+        messageAdapter = new MessageAdapter(messages);
+        messageAdapter.setOnLoadMoreListener(
+                new MessageAdapter.OnLoadMoreListener() {
+                    @Override
+                    public void onLoadMore() {
+                        try {
+                            String[] result = ElainaChatApplication.getInstance().getCurrentConversationId().split("_");
+                            Long receiverId = Long.parseLong(result[1]);
+
+                            Content content = new Content(ContentType.CHATHISTORY,new Messages(
+                                    ElainaChatApplication.getInstance().getCurrentUser().getId(),
+                                    receiverId,
+                                    ElainaChatApplication.getInstance().getLastMessageId().toString()+"_"+ElainaChatApplication.getInstance().getCurrentPage().toString()));
+                            client.sendMessage(content);
+                        }
+                        catch (Exception e) {
+                            System.out.println(e.getMessage());
+                        }
+                    }
+                }
+        );
+        ElainaChatApplication.getInstance().setMessageAdapter(messageAdapter);
     }
 
-    private void scrollToBottom() {
-        chatRecyclerView.smoothScrollToPosition(messageAdapter.getItemCount() - 1);
-    }
-
-    private void replayMessage(String userMessage) {
-        // 现在只是简单地模拟一个回复
-        String botResponse = "我收到了你的消息：" + userMessage;
-        addMessage(botResponse,"bot");
-    }
 }

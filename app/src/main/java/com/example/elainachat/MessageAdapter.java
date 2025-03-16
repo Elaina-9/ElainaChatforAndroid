@@ -6,6 +6,9 @@ import android.view.ViewGroup;
 import android.widget.TextView;
 import androidx.annotation.NonNull;
 import androidx.recyclerview.widget.RecyclerView;
+
+import com.example.elainachat.netty.entity.Messages;
+
 import java.util.List;
 
 
@@ -13,7 +16,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
     //用于区分不同类型的消息
     private static final int VIEW_TYPE_SENT = 1;
     private static final int VIEW_TYPE_RECEIVED = 2;
-    private List<Message> messages;
+    private List<Messages> messages;
 
     private OnLoadMoreListener loadMoreListener;
 
@@ -22,7 +25,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
         void onLoadMore();
     }
 
-    public MessageAdapter(List<Message> messages) {
+    public MessageAdapter(List<Messages> messages) {
         this.messages = messages;
     }
 
@@ -43,23 +46,24 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
 
     @Override
     public int getItemViewType(int position) {
-        Message message = messages.get(position);
-        if (message.getSender().equals("User")) {
+        Messages message = messages.get(position);
+        if (message.getSenderId().equals(1L)) {
             return VIEW_TYPE_SENT;     // 返回 1，表示发送的消息
         } else {
             return VIEW_TYPE_RECEIVED; // 返回 2，表示接收的消息
         }
     }
 
+    //滑入屏幕时调用
     @Override
     public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
         // 当滑动到顶部时触发加载更多
         if (position == 0 && loadMoreListener != null) {
             loadMoreListener.onLoadMore();
         }
-        Message message = messages.get(position);
+        Messages message = messages.get(position);
         if (holder instanceof MessageViewHolder) {
-            ((MessageViewHolder) holder).messageText.setText(message.getContent());
+            ((MessageViewHolder) holder).messageText.setText(message.getMessageContent());
         }
     }
 
@@ -68,14 +72,18 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
         return messages.size();
     }
 
-
-    // 在开头添加消息列表
-    public void addMessagesAtStart(List<Message> newMessages) {
-        messages.addAll(0, newMessages);
-        notifyItemRangeInserted(0, newMessages.size());
+    public void clear() {
+        messages.clear();
+        notifyDataSetChanged();
     }
 
-    public void addMessage(Message message) {
+    // 在开头添加消息列表
+    public void addMessageAtStart(Messages message) {
+        messages.add(0, message);
+        notifyItemInserted(0);
+    }
+
+    public void addMessage(Messages message) {
         messages.add(message);
         notifyItemInserted(messages.size() - 1);
     }

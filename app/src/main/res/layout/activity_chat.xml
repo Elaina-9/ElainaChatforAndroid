@@ -56,17 +56,24 @@
 
         <com.google.android.material.textfield.TextInputLayout
             android:layout_width="0dp"
-            android:layout_height="48dp"
+            android:layout_height="wrap_content"
             android:layout_weight="1"
             android:layout_marginHorizontal="8dp"
             android:layout_gravity="center_vertical"
-            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox">
+            app:hintEnabled="true"
+            app:hintAnimationEnabled="true"
+            app:boxStrokeWidth="1dp"
+            app:hintTextColor="?attr/colorPrimary"
+            style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense">
 
             <com.google.android.material.textfield.TextInputEditText
                 android:id="@+id/messageEditText"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:hint="输入消息..."
+                android:textSize="14sp"
+                android:paddingTop="8dp"
+                android:paddingBottom="8dp"
                 android:maxLines="4" />
         </com.google.android.material.textfield.TextInputLayout>
 

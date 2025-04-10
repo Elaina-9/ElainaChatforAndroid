@@ -48,10 +48,10 @@ public class LoginActivity extends AppCompatActivity {
             // 模拟登录
             new Thread(() -> {
                 try {
-                    Thread.sleep(2000);
+                    Thread.sleep(1000);
                     runOnUiThread(() -> {
                         progressBar.setVisibility(View.GONE);
-                        Intent intent = new Intent(LoginActivity.this, FriendsActivity.class);
+                        Intent intent = new Intent(LoginActivity.this, ConversationInfoActivity.class);
                         client = ElainaChatApplication.getInstance().getClient();
                         try {
                             client.start();
@@ -65,5 +65,12 @@ public class LoginActivity extends AppCompatActivity {
                 }
             }).start();
         });
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        ElainaChatApplication.getInstance().setCurrentActivity(this);
+
     }
 }

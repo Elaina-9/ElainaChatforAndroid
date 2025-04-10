@@ -1,11 +1,12 @@
 package com.example.elainachat;
 
+import android.app.Activity;
 import android.app.Application;
 
 import com.example.elainachat.netty.NettyClient;
-import com.example.elainachat.netty.entity.Content;
-import com.example.elainachat.netty.entity.ContentType;
-import com.example.elainachat.netty.entity.FriendsInfo;
+
+import com.example.elainachat.netty.entity.AppDatabase;
+import com.example.elainachat.netty.entity.ConversationInfo;
 import com.example.elainachat.netty.entity.Messages;
 import com.example.elainachat.netty.entity.Users;
 
@@ -18,28 +19,28 @@ import lombok.Setter;
 @Setter
 public class ElainaChatApplication extends Application {
     private static ElainaChatApplication instance;
+    private AppDatabase database;
+    private Activity currentActivity;
+    private ChatViewModel chatViewModel;
     //服务端地址
     private String host = "10.0.2.2";
-    private Users currentUser =new Users(2L,"123456");
+    private Users currentUser =new Users(2L,"");
+    private ConversationInfo currentConversation;
     private NettyClient client;
 
     private List<Messages> messages;
     private MessageAdapter messageAdapter;
-    //此处friendApapter需要处理页面转换，从friend界面到chat界面，所以在friendActivity中初始化
-    private List<FriendsInfo> friendsList;
-    private FriendsAdapter friendAdapter;
 
-    private String currentConversationId = "2_1";
-    private Long currentPage = 0L;
-    private Long lastMessageId = 0L;
-
+    private List<ConversationInfo> conversationInfos;
+    private ConversationInfoAdapter conversationInfoAdapter;
     @Override
     public void onCreate() {
         super.onCreate();
+        database = AppDatabase.getDatabase(this);
         instance = this;
         client = new NettyClient(host,8888);
         messages = new ArrayList<>();
-        friendsList = new ArrayList<>();
+        conversationInfos = new ArrayList<>();
 
 //        messageAdapter.setOnLoadMoreListener(
 //                new MessageAdapter.OnLoadMoreListener() {

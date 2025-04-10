@@ -1,6 +1,7 @@
 package com.example.elainachat;
 
 import android.os.Bundle;
+import android.util.Log;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.Toast;
@@ -8,9 +9,14 @@ import android.widget.Toast;
 import androidx.appcompat.widget.Toolbar;
 
 import androidx.appcompat.app.AppCompatActivity;
+import androidx.lifecycle.LiveData;
+import androidx.lifecycle.ViewModelProvider;
 import androidx.recyclerview.widget.LinearLayoutManager;
 import androidx.recyclerview.widget.RecyclerView;
+import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 
+import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import android.view.Menu;
 import android.view.MenuItem;
@@ -18,58 +24,79 @@ import android.view.MenuItem;
 import com.example.elainachat.netty.NettyClient;
 import com.example.elainachat.netty.entity.Content;
 import com.example.elainachat.netty.entity.ContentType;
+import com.example.elainachat.netty.entity.Conversation;
+import com.example.elainachat.netty.entity.ConversationInfo;
 import com.example.elainachat.netty.entity.Messages;
+import com.example.elainachat.netty.entity.MessagesRepository;
 import com.example.elainachat.netty.entity.Users;
 
 
 public class ChatActivity extends AppCompatActivity {
+    private ChatViewModel chatViewModel;
     private RecyclerView chatRecyclerView;
     private EditText messageEditText;
     private ImageButton sendButton;
+    private SwipeRefreshLayout swipeRefreshLayout;
     private NettyClient client;
     private List<Messages> messages;
     private MessageAdapter messageAdapter;
+    private ConversationInfo currentConversation;
+
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_chat);
 
-        // 初始化视图
-        chatRecyclerView = findViewById(R.id.chatRecyclerView);
-        messageEditText = findViewById(R.id.messageEditText);
-        sendButton = findViewById(R.id.sendButton);
+        init();
+        loadInitialMessages();
 
-        client = ElainaChatApplication.getInstance().getClient();
-        messages = ElainaChatApplication.getInstance().getMessages();
-        initMessageAdapter();
-        messageAdapter.clear();
+    }
 
-        // 设置RecyclerView
-        chatRecyclerView.setLayoutManager(new LinearLayoutManager(this));
-        chatRecyclerView.setAdapter(ElainaChatApplication.getInstance().getMessageAdapter());
+    //用于查询历史消息，先查本地数据库，如果没有则向服务器请求
+    private void loadMessages() {
+        // 显示加载指示器
+        swipeRefreshLayout.setRefreshing(true);
+        //获得目前最新消息的ID
+        long lastMessageId = messages.get(0).getId();
 
-        // 设置发送按钮点击事件
-        sendButton.setOnClickListener(v -> sendMessage());
+        //后台线程查询数据库
+        new Thread(()-> {
+            List<Messages> latestMessages = chatViewModel.getPreviousMessages(currentConversation.getConversationId(), lastMessageId);
+            if (latestMessages != null && !latestMessages.isEmpty()) {
+                System.out.println("本地有消息，直接加载");
+                for(Messages message : latestMessages) {
+                    messageAdapter.addMessageAtStart(message);
+                }
+                runOnUiThread(() -> {
+                    stopLoading();
+                });
+            } else {
+                //本地没有消息，向服务器请求
+                System.out.println("本地没有消息，向服务器请求");
+                Content content = new Content(ContentType.OLDCHATRECORD, messages.get(0));
+                client.sendMessage(content);
+            }
+        }).start();
+    }
+    public void stopLoading() {
+        // 停止加载指示器
+        swipeRefreshLayout.setRefreshing(false);
+    }
 
-        Toolbar toolbar = findViewById(R.id.toolbar);
-        setSupportActionBar(toolbar);
-        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
-        getSupportActionBar().setDisplayShowHomeEnabled(true);
-        getSupportActionBar().setTitle("聊天界面");
-        toolbar.setNavigationOnClickListener(v -> finish());
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 设置当前活动
+        ElainaChatApplication.getInstance().setCurrentActivity(this);
+    }
 
-        new Thread(() ->{
-        // 模拟加载历史消息
-        try {
-            Users currentUser = ElainaChatApplication.getInstance().getCurrentUser();
-            Content content = new Content(ContentType.CHATHISTORY,new Messages(currentUser.getId(),1L,"100_1"));
-            client.sendMessage(content);
-        } catch (Exception e) {
-            //打印错误信息
-            System.out.println(e.getMessage());
-        }
-    }).start();
+    @Override
+    protected void onDestroy() {
+        super.onDestroy();
+//        ElainaChatApplication.getInstance().setMessageAdapter(null);
+//        ElainaChatApplication.getInstance().setCurrentPage(1L);
+//        ElainaChatApplication.getInstance().setLastMessageId(0L);
     }
 
     // 创建菜单
@@ -107,42 +134,117 @@ public class ChatActivity extends AppCompatActivity {
                 return;
             }
             System.out.println(messageContent);
-            Messages messages = new Messages(ElainaChatApplication.getInstance().getCurrentUser().getId(), 2L, messageContent);
-            ElainaChatApplication.getInstance().getMessageAdapter().addMessage(messages);
+            Messages messages = new Messages(currentConversation.getConversationId(),ElainaChatApplication.getInstance().getCurrentUser().getId(),
+                    currentConversation.getUserId(), messageContent);
+            messageAdapter.addMessage(messages);
             messageEditText.setText("");
-            client = ElainaChatApplication.getInstance().getClient();
+            chatRecyclerView.scrollToPosition(messageAdapter.getItemCount() - 1);
+            System.out.println("发送消息: " + messages.getConversationId() + " " + messages.getSenderId() + " " + messages.getReceiverId() + " " + messages.getMessageContent());
             client.sendMessage(new Content(ContentType.MESSAGE, messages));
         }
         catch (Exception e) {
-            e.printStackTrace();
-            //打印错误信息
-            System.out.println(e.getMessage());
+            System.out.println("sendMessage Error:"+e.getMessage());
         }
     }
 
-    private void initMessageAdapter() {
-        messageAdapter = new MessageAdapter(messages);
-        messageAdapter.setOnLoadMoreListener(
-                new MessageAdapter.OnLoadMoreListener() {
-                    @Override
-                    public void onLoadMore() {
-                        try {
-                            String[] result = ElainaChatApplication.getInstance().getCurrentConversationId().split("_");
-                            Long receiverId = Long.parseLong(result[1]);
+    //用于进入ChatActivity时初始化
+    private void loadInitialMessages() {
+        // 显示加载指示器
+        swipeRefreshLayout.setRefreshing(true);
 
-                            Content content = new Content(ContentType.CHATHISTORY,new Messages(
-                                    ElainaChatApplication.getInstance().getCurrentUser().getId(),
-                                    receiverId,
-                                    ElainaChatApplication.getInstance().getLastMessageId().toString()+"_"+ElainaChatApplication.getInstance().getCurrentPage().toString()));
-                            client.sendMessage(content);
+        new Thread(() -> {
+            try {
+                // 1. 先尝试从本地加载消息
+                List<Messages> localMessages = chatViewModel.getLatestMessages(currentConversation.getConversationId());
+
+                runOnUiThread(() -> {
+                    if (localMessages != null && !localMessages.isEmpty()) {
+                        // 有本地消息，直接显示
+                        for (Messages message : localMessages) {
+                            messageAdapter.addMessageAtStart(message);
                         }
-                        catch (Exception e) {
-                            System.out.println(e.getMessage());
-                        }
+                        chatRecyclerView.scrollToPosition(messageAdapter.getItemCount() - 1);
+
+                        // 2. 本地消息加载完成后，再检查是否有新消息
+                        checkForNewMessages();
+                    } else {
+                        // 无本地消息，向服务器请求初始消息
+                        Conversation conversation = new Conversation(currentConversation.getConversationId(), LocalDateTime.now());
+                        Content content = new Content(ContentType.INITCONVERSATION, conversation);
+                        client.sendMessage(content);
+                        // 服务器响应会通过NettyClientHandler处理
                     }
-                }
-        );
+                });
+            } catch (Exception e) {
+                runOnUiThread(() -> {
+                    Log.e("ChatActivity", "加载消息失败", e);
+                    Toast.makeText(ChatActivity.this, "加载消息失败: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+                    stopLoading();
+                });
+            }
+        }).start();
+    }
+
+    //用于加载新消息
+    private void checkForNewMessages() {
+        if (messages == null || messages.isEmpty()) {
+            stopLoading();
+            return;
+        }
+
+        try {
+            Messages latestMessage = messages.get(messages.size() - 1);
+            Content content = new Content(ContentType.NEWCHATRECORD, latestMessage);
+            client.sendMessage(content);
+            // 服务器响应会通过NettyClientHandler处理，并自动停止加载
+        } catch (Exception e) {
+            Log.e("ChatActivity", "检查新消息失败", e);
+            stopLoading();
+        }
+    }
+
+
+    private void init() {
+        chatViewModel = new ViewModelProvider(this).get(ChatViewModel.class);
+        ElainaChatApplication.getInstance().setChatViewModel(chatViewModel);
+
+        // 初始化视图
+        chatRecyclerView = findViewById(R.id.chatRecyclerView);
+        messageEditText = findViewById(R.id.messageEditText);
+        sendButton = findViewById(R.id.sendButton);
+        swipeRefreshLayout = findViewById(R.id.swipeRefresh);
+        swipeRefreshLayout.setOnRefreshListener(() -> {
+            try {
+                loadMessages();
+            }
+            catch (Exception e) {
+                Log.e("RefreshDatabaseError", "Error loading messages", e);
+                // 展示错误信息
+                Toast.makeText(this, "加载消息错误: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            }
+        });
+
+        client = ElainaChatApplication.getInstance().getClient();
+        messages = ElainaChatApplication.getInstance().getMessages();
+        messageAdapter = new MessageAdapter(messages);
         ElainaChatApplication.getInstance().setMessageAdapter(messageAdapter);
+        messageAdapter.clear();
+
+        currentConversation = ElainaChatApplication.getInstance().getCurrentConversation();
+
+        // 设置RecyclerView
+        chatRecyclerView.setLayoutManager(new LinearLayoutManager(this));
+        chatRecyclerView.setAdapter(ElainaChatApplication.getInstance().getMessageAdapter());
+
+        // 设置发送按钮点击事件
+        sendButton.setOnClickListener(v -> sendMessage());
+
+        Toolbar toolbar = findViewById(R.id.toolbar);
+        setSupportActionBar(toolbar);
+        getSupportActionBar().setDisplayHomeAsUpEnabled(true);
+        getSupportActionBar().setDisplayShowHomeEnabled(true);
+        getSupportActionBar().setTitle("聊天界面");
+        toolbar.setNavigationOnClickListener(v -> finish());
     }
 
 }

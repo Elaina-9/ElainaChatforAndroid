@@ -74,4 +74,14 @@ dependencies {
     implementation("com.baomidou:mybatis-plus-core:3.5.5")
     // 分页功能
     implementation("com.baomidou:mybatis-plus-extension:3.5.5")
+
+    // Room components
+    implementation("androidx.room:room-runtime:2.6.1")
+    annotationProcessor("androidx.room:room-compiler:2.6.1")
+
+    // LiveData components
+    implementation("androidx.lifecycle:lifecycle-livedata:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-viewmodel:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-runtime:2.7.0")
+    implementation("androidx.lifecycle:lifecycle-common-java8:2.7.0")
 }

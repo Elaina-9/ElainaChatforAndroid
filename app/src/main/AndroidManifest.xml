@@ -17,7 +17,7 @@
         android:theme="@style/Theme.ElainaChat"
         tools:targetApi="31">
         <activity
-            android:name=".FriendsActivity"
+            android:name=".ConversationInfoActivity"
             android:exported="false" />
         <activity
             android:name=".RegisterActivity"

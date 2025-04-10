@@ -17,16 +17,12 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
     private static final int VIEW_TYPE_SENT = 1;
     private static final int VIEW_TYPE_RECEIVED = 2;
     private List<Messages> messages;
-
-    private OnLoadMoreListener loadMoreListener;
-
-    // 添加加载更多的监听接口
-    public interface OnLoadMoreListener {
-        void onLoadMore();
-    }
+    private Long currentUserId;
+    private boolean isLoading = false;
 
     public MessageAdapter(List<Messages> messages) {
         this.messages = messages;
+        currentUserId = ElainaChatApplication.getInstance().getCurrentUser().getId();
     }
 
 
@@ -47,7 +43,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
     @Override
     public int getItemViewType(int position) {
         Messages message = messages.get(position);
-        if (message.getSenderId().equals(1L)) {
+        if (message.getSenderId() == currentUserId) {
             return VIEW_TYPE_SENT;     // 返回 1，表示发送的消息
         } else {
             return VIEW_TYPE_RECEIVED; // 返回 2，表示接收的消息
@@ -57,10 +53,7 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
     //滑入屏幕时调用
     @Override
     public void onBindViewHolder(@NonNull RecyclerView.ViewHolder holder, int position) {
-        // 当滑动到顶部时触发加载更多
-        if (position == 0 && loadMoreListener != null) {
-            loadMoreListener.onLoadMore();
-        }
+
         Messages message = messages.get(position);
         if (holder instanceof MessageViewHolder) {
             ((MessageViewHolder) holder).messageText.setText(message.getMessageContent());
@@ -86,12 +79,14 @@ public class MessageAdapter extends RecyclerView.Adapter<RecyclerView.ViewHolder
     public void addMessage(Messages message) {
         messages.add(message);
         notifyItemInserted(messages.size() - 1);
+        isLoading = false;
     }
-
-
-    // 设置加载更多监听器
-    public void setOnLoadMoreListener(OnLoadMoreListener listener) {
-        this.loadMoreListener = listener;
+    public void setMessages(List<Messages> newMessages) {
+        this.messages.clear();
+        if (newMessages != null) {
+            this.messages.addAll(newMessages);
+        }
+        notifyDataSetChanged();
     }
 
     static class MessageViewHolder extends RecyclerView.ViewHolder {

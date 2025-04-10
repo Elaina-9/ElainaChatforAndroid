@@ -2,7 +2,6 @@ package com.example.elainachat;
 
 import android.content.Intent;
 import android.os.Bundle;
-import android.os.Handler;
 import android.text.InputType;
 import android.text.TextUtils;
 import android.view.View;
@@ -21,29 +20,27 @@ import androidx.swiperefreshlayout.widget.SwipeRefreshLayout;
 import com.example.elainachat.netty.NettyClient;
 import com.example.elainachat.netty.entity.Content;
 import com.example.elainachat.netty.entity.ContentType;
-import com.example.elainachat.netty.entity.Friends;
-import com.example.elainachat.netty.entity.FriendsInfo;
+import com.example.elainachat.netty.entity.ConversationInfo;
+import com.example.elainachat.netty.entity.Member;
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 
-import java.time.LocalDateTime;
 import java.util.List;
 
-public class FriendsActivity extends AppCompatActivity implements FriendsAdapter.OnFriendItemClickListener {
-
+public class ConversationInfoActivity extends AppCompatActivity implements ConversationInfoAdapter.OnConversationItemClickListener {
     private RecyclerView recyclerViewFriends;
     private SwipeRefreshLayout swipeRefresh;
-    private FriendsAdapter adapter;
-    private List<FriendsInfo> friendsList;
+    private ConversationInfoAdapter adapter;
+    private List<ConversationInfo> conversationInfos;
     private View emptyView;
 
     private NettyClient client;
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
-        setContentView(R.layout.activity_friends);
+        setContentView(R.layout.activity_conversations);
 
         // 初始化视图
-        recyclerViewFriends = findViewById(R.id.recyclerViewFriends);
+        recyclerViewFriends = findViewById(R.id.recyclerViewconversations);
         swipeRefresh = findViewById(R.id.swipeRefresh);
         emptyView = findViewById(R.id.emptyView);
 
@@ -55,13 +52,13 @@ public class FriendsActivity extends AppCompatActivity implements FriendsAdapter
         recyclerViewFriends.addItemDecoration(new DividerItemDecoration(this, DividerItemDecoration.VERTICAL));
 
         // 初始化数据
-        friendsList = ElainaChatApplication.getInstance().getFriendsList();
-        adapter = new FriendsAdapter(friendsList, this);
-        ElainaChatApplication.getInstance().setFriendAdapter(adapter);
+        conversationInfos = ElainaChatApplication.getInstance().getConversationInfos();
+        adapter = new ConversationInfoAdapter(conversationInfos, this);
+        ElainaChatApplication.getInstance().setConversationInfoAdapter(adapter);
         recyclerViewFriends.setAdapter(adapter);
 
         // 配置下拉刷新
-        swipeRefresh.setOnRefreshListener(this::loadFriends);
+        swipeRefresh.setOnRefreshListener(this::loadConversations);
 
         // 添加好友按钮
         FloatingActionButton fabAddFriend = findViewById(R.id.fabAddFriend);
@@ -70,43 +67,41 @@ public class FriendsActivity extends AppCompatActivity implements FriendsAdapter
         Button btnAddFirstFriend = findViewById(R.id.btnAddFirstFriend);
         btnAddFirstFriend.setOnClickListener(v -> openAddFriendDialog());
 
-        // 加载好友列表
-        loadFriends();
+        // 加载对话列表
+        loadConversations();
     }
 
-    private void loadFriends() {
+    @Override
+    protected void onResume() {
+        super.onResume();
+        // 设置当前活动
+        ElainaChatApplication.getInstance().setCurrentActivity(this);
+    }
+
+    private void loadConversations() {
         // 显示加载指示器
         swipeRefresh.setRefreshing(true);
 
         // 清空现有列表
-        friendsList.clear();
-        Content content = new Content(ContentType.FRIENDQUERY, new Friends(ElainaChatApplication.getInstance().getCurrentUser().getId(),null));
+        conversationInfos.clear();
+
+        Member member = new Member();
+        member.setUserId(ElainaChatApplication.getInstance().getCurrentUser().getId());
+        System.out.println("userId" + member.getUserId());
+        Content content = new Content(ContentType.CONVERSATIONINFO, member);
         client = ElainaChatApplication.getInstance().getClient();
         client.sendMessage(content);
 
-        // 模拟网络请求，实际应用中这里应该调用API
-        new Handler().postDelayed(() -> {
-
-//            FriendsInfo friend = new FriendsInfo();
-//            friend.setUserId(1L);
-//            friend.setLastMessage("123456");
-//            friend.setLastMessage("Hello");
-//            friend.setLastMessageTime(LocalDateTime.now());
-//            adapter.addFriend(friend);
-
-
-            System.out.println("friendsList: " + friendsList);
-
-            // 隐藏加载指示器
-            swipeRefresh.setRefreshing(false);
-
-            // 显示/隐藏空视图
-            updateEmptyView();
-        }, 1000);
+    }
+    //用于结束加载动画
+    public void stopLoading() {
+        // 停止加载指示器
+        swipeRefresh.setRefreshing(false);
+        updateEmptyView();
     }
 
     private void updateEmptyView() {
-        if (friendsList.isEmpty()) {
+        if (conversationInfos.isEmpty()) {
             recyclerViewFriends.setVisibility(View.GONE);
             emptyView.setVisibility(View.VISIBLE);
         } else {
@@ -128,7 +123,7 @@ public class FriendsActivity extends AppCompatActivity implements FriendsAdapter
         builder.setPositiveButton("添加", (dialog, which) -> {
             String friendId = input.getText().toString();
             if (!TextUtils.isEmpty(friendId)) {
-                Toast.makeText(FriendsActivity.this, "已发送好友请求", Toast.LENGTH_SHORT).show();
+                Toast.makeText(ConversationInfoActivity.this, "已发送好友请求", Toast.LENGTH_SHORT).show();
             }
         });
 
@@ -137,10 +132,10 @@ public class FriendsActivity extends AppCompatActivity implements FriendsAdapter
     }
 
     @Override
-    public void onFriendItemClick(FriendsInfo friend) {
+    public void onConversationItemClick(ConversationInfo conversationInfo) {
         // 跳转到聊天界面
         Intent intent = new Intent(this, ChatActivity.class);
-
+        ElainaChatApplication.getInstance().setCurrentConversation(conversationInfo);
         startActivity(intent);
     }
 }

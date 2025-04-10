@@ -1,14 +1,20 @@
 package com.example.elainachat.netty;
 
+import android.app.Activity;
 import android.os.Handler;
 import android.os.Looper;
 
 import com.baomidou.mybatisplus.core.metadata.IPage;
+import com.example.elainachat.ChatActivity;
+import com.example.elainachat.ChatViewModel;
+import com.example.elainachat.ConversationInfoActivity;
+import com.example.elainachat.ConversationInfoAdapter;
 import com.example.elainachat.ElainaChatApplication;
+import com.example.elainachat.MessageAdapter;
 import com.example.elainachat.netty.entity.Content;
 import com.example.elainachat.netty.entity.ContentType;
 import com.example.elainachat.netty.entity.CustomGson;
-import com.example.elainachat.netty.entity.FriendsInfo;
+import com.example.elainachat.netty.entity.ConversationInfo;
 import com.example.elainachat.netty.entity.Messages;
 import com.example.elainachat.netty.entity.Users;
 import com.google.gson.Gson;
@@ -26,7 +32,6 @@ public class NettyClientHandler extends SimpleChannelInboundHandler<String> {
     private Gson gson = CustomGson.getCustomGson();
     private NettyClient client;
     private Handler mainHandler;
-
     public NettyClientHandler(NettyClient client) {
         this.client = client;
         // 创建主线程Handler
@@ -35,6 +40,13 @@ public class NettyClientHandler extends SimpleChannelInboundHandler<String> {
 
     @Override
     protected void channelRead0(ChannelHandlerContext ctx, String msg) {
+        ChatViewModel chatViewModel = ElainaChatApplication.getInstance().getChatViewModel();
+        ChatActivity chatActivity = null;
+        if(ElainaChatApplication.getInstance().getCurrentActivity() instanceof ChatActivity) 
+            chatActivity = (ChatActivity) ElainaChatApplication.getInstance().getCurrentActivity();
+        
+        MessageAdapter messageAdapter = ElainaChatApplication.getInstance().getMessageAdapter();
+
         Content content = gson.fromJson(msg, Content.class);
         ContentType type = content.getType();
         switch(type) {
@@ -48,34 +60,113 @@ public class NettyClientHandler extends SimpleChannelInboundHandler<String> {
                 break;
             case MESSAGE:
                 Messages message = gson.fromJson(gson.toJson(content.getData()), Messages.class);
-                System.out.println("Received message: " + message.getMessageContent());
+                Long senderId = message.getSenderId();
+                Long currentUserId = ElainaChatApplication.getInstance().getCurrentUser().getId();
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    try {
+                        System.out.println("Received message: " + message.getMessageContent());
+                        //如果是自己发送的消息被服务器确认后返回的
+                        if(senderId == currentUserId) {
+                            //TODO
+                            //UI的消息变为发送成功
+                        }
+                        else{
+                            messageAdapter.addMessage(message);
+                        }
+                    }
+                    catch (Exception e) {
+                        System.out.println("Error adding message: " + e.getMessage());
+                    }
+                });
+
+                try {
+                    chatViewModel.insert(message);
+                }
+                catch (Exception e) {
+                    System.out.println("Error inserting message: " + e.getMessage());
+                }
                 break;
             case SERVERRESPONSE:
                 System.out.println("Server response: " + content.getData().toString());
                 break;
-            case CHATHISTORY:
-                Type pageType = new TypeToken<IPage<Messages>>(){}.getType();
-                IPage<Messages> messages = gson.fromJson(gson.toJson(content.getData()), pageType);
-                //如果lastMessageId为0，说明是第一次加载聊天记录
-                if(ElainaChatApplication.getInstance().getLastMessageId() == 0) {
-                    ElainaChatApplication.getInstance().setLastMessageId(messages.getRecords().get(0).getId());
+            case CONVERSATIONINFO:
+                System.out.println("Received conversation info");
+                    List<ConversationInfo> conversationInfos = gson.fromJson(gson.toJson(content.getData()), new TypeToken<List<ConversationInfo>>() {
+                    }.getType());
+                    ConversationInfoAdapter adapter = ElainaChatApplication.getInstance().getConversationInfoAdapter();
+                if(adapter != null) {
+                    mainHandler.post(() -> {
+                        adapter.updateConversationList(conversationInfos);
+                    });
+                } else {
+                    System.out.println("Adapter is null");
                 }
-                ElainaChatApplication.getInstance().setCurrentPage(messages.getCurrent() + 1);
-                mainHandler.post(() -> {
-                    for (Messages m : messages.getRecords()) {
-                        ElainaChatApplication.getInstance().getMessageAdapter().addMessageAtStart(m);
-                        System.out.println(m.getSenderId() + "  send to " + m.getReceiverId() + " : " + m.getMessageContent());
+                //获取当前活动页面并结束加载
+                if(ElainaChatApplication.getInstance().getCurrentActivity() != null) {
+                        ConversationInfoActivity activity = (ConversationInfoActivity) ElainaChatApplication.getInstance().getCurrentActivity();
+                        activity.runOnUiThread(() -> {
+                            activity.stopLoading();
+                        });
+                }
+                break;
+            case OLDCHATRECORD:
+                IPage<Messages> messages = gson.fromJson(gson.toJson(content.getData()), new TypeToken<IPage<Messages>>() {}.getType());
+                //获取当前活动页面
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    try {
+                        for (Messages message1 : messages.getRecords()) {
+                            System.out.println("Received old message: " + message1.getMessageContent());
+                            messageAdapter.addMessageAtStart(message1);
+                            chatViewModel.insert(message1);
+                        }
+                    }
+                    catch (Exception e) {
+                        System.out.println("Error adding message: " + e.getMessage());
+                    }
+                });
+                //结束加载
+                if(chatActivity != null) {
+                    final ChatActivity chatActivity1 = chatActivity;
+                    chatActivity1.runOnUiThread(() -> {
+                        chatActivity1.stopLoading();
+                    });
+                }
+                break;
+            case NEWCHATRECORD:
+                List<Messages> newMessages = gson.fromJson(gson.toJson(content.getData()), new TypeToken<List<Messages>>() {}.getType());
+                final ChatActivity finalChatActivity = chatActivity;
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    try {
+                        for (Messages message1 : newMessages) {
+                            System.out.println("Received new message: " + message1.getMessageContent());
+                            messageAdapter.addMessage(message1);
+                            chatViewModel.insert(message1);
+                        }
+                        finalChatActivity.stopLoading();
+
+                    }
+                    catch (Exception e) {
+                        System.out.println("Error adding message: " + e.getMessage());
                     }
                 });
                 break;
-            case FRIENDQUERY:
-                Type friendListType = new TypeToken<List<FriendsInfo>>(){}.getType();
-                List<FriendsInfo> friends = gson.fromJson(gson.toJson(content.getData()), friendListType);
-                for(FriendsInfo friend : friends) {
-                    System.out.println("Friend: " + friend.toString());
-                    mainHandler.post(() -> ElainaChatApplication.getInstance().getFriendAdapter().addFriend(friend));
-                }
-                break;
+            case INITCONVERSATION:
+                Type IpageMessageType = new TypeToken<IPage<Messages>>() {}.getType();
+                IPage<Messages> initMessages = gson.fromJson(gson.toJson(content.getData()), IpageMessageType);
+                System.out.println("Received init messages: " + initMessages.getRecords().toString());
+
+                new Handler(Looper.getMainLooper()).post(() -> {
+                    try {
+                        for (Messages message1 : initMessages.getRecords()) {
+                            System.out.println("Received init message: " + message1.getMessageContent());
+                            messageAdapter.addMessageAtStart(message1);
+                            chatViewModel.insert(message1);
+                        }
+                    }
+                    catch (Exception e) {
+                        System.out.println("Error adding message: " + e.getMessage());
+                    }
+                });
         }
         //System.out.println("Server response: " + message);
     }
